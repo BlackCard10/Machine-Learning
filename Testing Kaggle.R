@@ -7,12 +7,15 @@ library(RColorBrewer)
 
 
 # Import and store the data
-train <- read.csv("~/Desktop/Kaggle /Homesight Data/train.csv")
-test <- read.csv("~/Desktop/Kaggle /Homesight Data/test.csv")
+train <- read.csv("~/Desktop/R Project/Kaggle/train.csv")
+test <- read.csv("~/Desktop/R Project/Kaggle/test.csv")
 
 # Create a decision tree using all variables
 set.seed(10)
 my_tree <- rpart(QuoteConversion_Flag ~.,train, method = "class")
+
+# Convert original_quote_data to string
+train$Original_Quote_Date <- as.Date(train$Original_Quote_Date, format = "%Y-%m-%d")
 
 # Use a fancy plot
 fancyRpartPlot(my_tree)
@@ -41,14 +44,36 @@ conf <- table(train$QuoteConversion_Flag, pred)
 # Test the accuracy
 acc <- sum(diag(conf))/sum(conf)
 
-# Clone the train data set to use for feature engineering
+# Clone the train data set to use for feature induction
 train.FI <- train
 
-# Fit a linear model to predict the columns containing significant # of NAs
-lm.fitPF84 <- lm(PersonalField84 ~ ., data = train.FI)
-lm.fitPF29 <- lm(PropertyField29 ~. , data = train.FI)
-summary(lm.fitPF84)
-summary(lm.fitPF29)
+# Transform NAs in train.FI PropertyField29 to 0's.  O's are choose as this 
+# is the mode of the feature column
+na.indexPF29 <- which(is.na(train.FI$PropertyField29))
+train.FI$PropertyField29[na.indexPF29] <- -1
+
+# Transform NAs in train.FI in PersonalField84 to 0's. 0's are chosen as this
+# is the mode of the feature column
+na.indexPF84 <- which(is.na(train.FI$PersonalField84))
+train.FI$PersonalField84[na.indexPF84] <- -1
+
+# Use train.FI in a new decision tree model
+my.treeFI <- rpart(QuoteConversion_Flag ~ ., train.FI, method = "class")
+
+# Predict the outcome of the model using the prediction 
+predFI <- predict(my.treeFI, train.FI, type = "class")
+
+# Create a confusion matrix 
+confFI <- table(train.FI$QuoteConversion_Flag, pred)
+
+# Test the accuracy
+accFI <- sum(diag(confFI))/sum(confFI)
+
+# Look at the cp matrix to determine the 10 parts cross validation 
+cpFI <- printcp(my.treeFI)
+
+
+
 
 
 
