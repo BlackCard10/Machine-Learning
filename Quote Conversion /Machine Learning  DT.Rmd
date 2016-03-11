@@ -1,0 +1,210 @@
+---
+title: Using a Recursive Partitioning Model to Predict Insurance Purchases
+author: James Hilton Jr. 
+output: html_document
+
+---
+
+## Data
+
+The data set for this examination comes from the people at Kaggle, a platform for predictive modeling and analytics competitions.  This particular competetion was sponsored by Homesite, a provider of homeowners insurance.  The task is to predict, with the most accuracy, when a customer will purchase a given quote from Homesite for insurance.  The dataset can be found here: [Homesite Data](https://www.kaggle.com/c/homesite-quote-conversion/data).
+
+Some of the variables present in the data set are:
+
+* **QuoteConversionFlag** - A binary factor containing whether or not a given quote for home insurance was purchased or not. 
+
+* **OriginalQuoteDate** - The date on which a quote for insurance was created.  
+
+Also present are 297 other variables related to the sales areas, anonymized consumer data and more representing approximately 300,000 observations.  
+  
+## Methods
+
+A method for classification of datasets with large predicter sets is recursive partioning using decision trees.  Each node on the decision tree represents a feature of the data set that is split on an attribute value test, hoping to split the dataset into ideal, high concentration, subsets. 
+For example, an idealized subset might contain a node labeled "X", containing 100% of the given label. Concurrently with node "X" at 100% would be 100% of the outcome we're hoping to predict.  We would read the above as: 100% of items containing feature X are in our desired class.
+
+There are a varity of methods that can be used to compute an idealized "X", but I chose to use the [Gini Impurity](https://en.wikipedia.org/wiki/Decision_tree_learning#Gini_impurity).   
+
+
+# Preprocessing
+
+To begin, load the necessary R packages that we will use to run the model.   
+
+```{r warning = FALSE, error = FALSE, message = FALSE}
+
+library(rpart)
+
+library(rattle)
+
+library(rpart.plot)
+
+library(RColorBrewer)
+```
+
+Now we load the data from the source into R.   
+
+``` {r}
+# Import and store the data
+train <- read.csv("~/Desktop/R Project/Kaggle/train.csv", stringsAsFactors = TRUE)
+test <- read.csv("~/Desktop/R Project/Kaggle/test.csv", stringsAsFactors = TRUE)
+```
+
+Preprocessing data is more of an art than a science.  I think it invloves more intuition about the nature of the stories that can be made about interactions bewteen data values and less so with applying rote methods.  In this vein, this first section is what I call "data exploring". 
+
+```{r}
+
+# Count the number of 'na' values per column
+na_count <- sapply(train, function(y) sum(length(which(is.na(y)))))
+
+# Create a data frame of the count of NA's per column
+na_count <- data.frame(na_count)
+
+# Return the names of the variables where na_count is greater than 0
+names_na <- names(train)[which(na_count >0)]
+number_na <- na_count[na_count > 0,]
+blanks_matrix <- rbind(names_na, number_na)
+blanks_matrix
+
+```
+
+First, I want to see which and how many variables contain NA's.  I store this information in a "blanks_matrix" to refer back to at a later time.  
+
+Next, we'll need to normalize the factor levels between the test and training data sets in order for rpart to return an accurate prediction value for each variable.  We test the factor levels using the following function and then we transform any factors with unequal levels.  
+
+```{r}
+
+
+factorCheck <- function(x,y) {  # x is the training set and y is the test set.   
+
+	for(attr in colnames(x)) {
+
+    	if (is.factor(x[[attr]])) {
+    
+       	 new.levels <- setdiff(levels(x[[attr]]), levels(y[[attr]]))
+        
+        	if ( length(new.levels) == 0 ){ 
+        		print(paste(attr, '- no new levels')) 
+        
+         	} else {
+         
+            	print(c(paste(attr, length(new.levels), 'of new levels, e.g.'), head(new.levels, 2)))
+        
+        	}
+    	}
+	}
+}
+```
+
+Now I fit the decision tree model using Rpart, R's recursive partitioning algorithm.  The results of the call can be seen in the chart below.   
+  
+```{r echo = FALSE}
+set.seed(10)
+my_tree <- rpart(QuoteConversion_Flag ~.,train, method = "class")
+```
+  
+```{r, echo = FALSE, eval= TRUE}
+fancyRpartPlot(my_tree)
+```
+
+  
+## Diagnosis 
+
+Below we use a call to print cp to access the error rates of our model.  
+
+```{r}
+
+# Use the printcp function to print out the error under varrying levels of the complexity parameter 
+cp <- printcp(my_tree)
+
+```
+
+We can use the results of the call to printcp to derive the 10 fold cross validation number for the model, which is <span style="color:red"> 0.46339 * 0.18751 = 0.08689 </span>. We can interpret 1 - cross validation set error as the c.v accuracy of our model which is .91311 or about 91%.  Not bad.  
+
+## Test Two 
+
+Now we'd like to see what happens if we make some inferences about the data set and make small changes to it. To make sure that our changes don't corrupt the orginial dataset we clone the dataset into a new dataframe that we can play with.  
+
+```{r}
+
+# Clone the train data set to use for feature induction
+train.FI <- train
+```
+
+As we saw with the call to blanks matrix previously, there are a significant number of NA values in PersonalField84 and PropertyField29. Let's assume that these values we want to be completely unrelated to the values in the data set, and set their values to -1.  Then, we test the outcome of the accuracy with a call to print cp.  
+
+```{r}
+
+#Transform NAs in train.FI PropertyField29 to -1's. 
+na.indexPF29 <- which(is.na(train.FI$PropertyField29))
+train.FI$PropertyField29[na.indexPF29] <- -1
+
+# Transform NAs in train.FI in PersonalField84 to -1's. -1's are choosen as this 
+# is a negative value whereas all other values are positive.  
+na.indexPF84 <- which(is.na(train.FI$PersonalField84))
+train.FI$PersonalField84[na.indexPF84] <- -1
+
+# Use train.FI in a new decision tree model
+my.treeFI <- rpart(QuoteConversion_Flag ~ ., train.FI, method = "class")
+
+```
+
+
+## Test Two Diagnosis 
+Looking at the result of our experiment, we see that this did not work well. The error of the 10 fold cross validation is higher <span style="color:red"> 0.49961 * 0.18751 = 0.09368 </span> 
+  
+```{r eval = TRUE}
+
+printcp(my.treeFI)
+
+```
+
+ 
+We'll stick with our original tree that we fit! However, for completeness sake, let's see if pruning our tree can result in lower test error of the model.  First, we find the optimal complexity parameter from the model.
+
+```{r}
+
+# Find the optimal 'cp' from print.cp using the best version of tree.  
+Optimal_CP <- my_tree$cptable[which.min(my_tree$cptable[,"xerror"])]
+
+```
+
+```{r eval = TRUE}
+# View the CP with the lowest relative error 
+plotcp(my_tree)
+```
+
+Now we use the complexity paramter from the plot as an argument to prune the tree. 
+
+```{r}
+
+# Prune the tree using the optimal CP
+my_treePruned <- prune(my_tree, cp = my_tree$cptable[which.min(my_tree$cptable[,"xerror"])])
+
+```
+  
+After visualizing the tree with the optimal cp we notice that the pruned tree is identical to the tree from our initial version. This gives an indcation that our model parameters are on track.   
+    
+```{r eval = TRUE}  
+
+# Plot pruned tree. Notice that this is the tree given initially before pruning.  
+fancyRpartPlot(my_treePruned)
+
+```
+
+For our last steps we 1) use the predict function and our model to calculate quote conversion for the test set 2) transform the predictions into a dataframe & 3) write a csv that we send in to kaggle for our submission.   
+
+
+```{r, eval = FALSE}
+  
+# Use the model to Predict the test data
+Prediction  <-predict(my_tree, test, type = "class")
+
+# Form a submission dataframe for Kaggle
+Submission <- data.frame(QuoteNumber = test$QuoteNumber, QuoteConversion_Flag = Prediction)s
+
+# Write a csv that contains all submission
+write.csv(Submission, file = "firstSubmission.csv", colnames = TRUE) 
+
+```
+               
+    
+    
